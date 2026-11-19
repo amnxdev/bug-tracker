@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import api from '../api/axios';
 import { useNavigate, Link } from 'react-router-dom';
 
-const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const rawUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+// Strip trailing /api to prevent double /api/api/auth
+const BACKEND_URL = rawUrl.replace(/\/api\/?$/, '').replace(/\/+$/, '');
 
 export default function Register() {
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });

@@ -19,6 +19,14 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Clean up accidental double /api/api prefixes
+app.use((req, res, next) => {
+  if (req.url.startsWith('/api/api/')) {
+    req.url = req.url.replace(/^\/api\/api\//, '/api/');
+  }
+  next();
+});
+
 // Session needed for Passport OAuth redirect flow only
 app.use(session({
   secret: process.env.JWT_SECRET || 'fallback_secret_for_session',

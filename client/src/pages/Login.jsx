@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import api from '../api/axios';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 
-const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const rawUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+// Strip trailing /api to prevent double /api/api/auth/google
+const BACKEND_URL = rawUrl.replace(/\/api\/?$/, '').replace(/\/+$/, '');
 
 const Login = () => {
   const [formData, setFormData] = useState({ email: '', password: '' });
