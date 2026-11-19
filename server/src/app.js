@@ -1,7 +1,7 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import session from 'express-session';
-import dotenv from 'dotenv';
 
 // Import Routes
 import authRoutes from './routes/authRoutes.js';
@@ -9,8 +9,6 @@ import projectRoutes from './routes/projectRoutes.js';
 import bugRoutes from './routes/bugRoutes.js';
 import commentRoutes from './routes/commentRoutes.js';
 import passport from './utils/passport.js';
-
-dotenv.config();
 
 const app = express();
 
