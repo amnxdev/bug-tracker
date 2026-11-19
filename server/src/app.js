@@ -28,7 +28,20 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Health check endpoint
+// Health check and root landing endpoints
+app.get(['/', '/api'], (req, res) => {
+  res.status(200).json({
+    status: 'online',
+    message: 'ORBIT Bug Tracker API is active',
+    frontend: process.env.CLIENT_URL || 'https://orbit-fontend.vercel.app',
+    endpoints: {
+      auth: '/api/auth',
+      projects: '/api/projects',
+      bugs: '/api/projects/:id/bugs',
+      health: '/api/health'
+    }
+  });
+});
 app.get('/health', (req, res) => res.status(200).json({ status: 'ok', uptime: process.uptime() }));
 app.get('/api/health', (req, res) => res.status(200).json({ status: 'ok', uptime: process.uptime() }));
 
