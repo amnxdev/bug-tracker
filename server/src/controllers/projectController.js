@@ -1,20 +1,14 @@
 import Project from '../models/Project.js';
 
-// 1. Get All Projects (With Alias Fix)
+// 1. Get All Projects (Accessible to all authenticated users)
 export const getProjects = async (req, res) => {
   try {
-    let projects;
-    if (req.user && req.user.role === 'admin') {
-      projects = await Project.find().sort({ createdAt: -1 });
-    } else {
-      const userId = req.user?.id || req.user?._id || req.userId;
-      projects = await Project.find({ createdBy: userId }).sort({ createdAt: -1 });
-    }
+    const projects = await Project.find().sort({ createdAt: -1 });
 
-    // MAGIC FIX: Map 'createdBy' to 'owner' so your Frontend shows the buttons
+    // Map 'createdBy' to 'owner' so Frontend buttons/badges align
     const projectsForFrontend = projects.map(p => ({
       ...p.toObject(),
-      owner: p.createdBy // This makes the delete button reappear!
+      owner: p.createdBy
     }));
 
     res.status(200).json(projectsForFrontend);
@@ -23,21 +17,12 @@ export const getProjects = async (req, res) => {
   }
 };
 
-// 2. Get Single Project (With Alias Fix)
+// 2. Get Single Project (Accessible to all authenticated users)
 export const getProjectById = async (req, res) => {
   try {
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ message: "Project not found" });
 
-    const userId = req.user?.id || req.user?._id || req.userId;
-    const isAdmin = req.user?.role === 'admin';
-
-    // Security check
-    if (!isAdmin && project.createdBy.toString() !== userId) {
-       return res.status(403).json({ message: "Access denied" });
-    }
-
-    // MAGIC FIX: Add 'owner' alias here too
     const projectData = {
       ...project.toObject(),
       owner: project.createdBy
@@ -49,9 +34,13 @@ export const getProjectById = async (req, res) => {
   }
 };
 
-// 3. Create Project
+// 3. Create Project (Admin only)
 export const createProject = async (req, res) => {
   try {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ message: "Not authorized as an admin" });
+    }
+
     const userId = req.user?.id || req.user?._id || req.userId;
     const newProject = new Project({
       name: req.body.name,
@@ -69,24 +58,36 @@ export const createProject = async (req, res) => {
   }
 };
 
-// 4. Delete Project
+// 4. Delete Project (Admin only)
 export const deleteProject = async (req, res) => {
   try {
-    await Project.findByIdAndDelete(req.params.id);
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ message: "Not authorized as an admin" });
+    }
+
+    const deleted = await Project.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ message: "Project not found" });
+
     res.status(200).json({ message: "Project deleted" });
   } catch (error) {
     res.status(500).json({ message: "Error deleting project", error: error.message });
   }
 };
 
-// 5. Update Project
+// 5. Update Project (Admin only)
 export const updateProject = async (req, res) => {
   try {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ message: "Not authorized as an admin" });
+    }
+
     const updatedProject = await Project.findByIdAndUpdate(
       req.params.id, 
       req.body, 
       { new: true }
     );
+    if (!updatedProject) return res.status(404).json({ message: "Project not found" });
+
     res.status(200).json(updatedProject);
   } catch (error) {
     res.status(500).json({ message: "Error updating project", error: error.message });

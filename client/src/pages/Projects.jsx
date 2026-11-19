@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import api from '../api/axios';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Layout, LogOut, Pencil, Trash2, X, Moon, Sun, ArrowRight, Shield } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, ArrowRight, Shield } from 'lucide-react';
+import Navbar from '../components/Navbar';
+import { useAuth } from '../context/AuthContext';
 
 export default function Projects() {
   const [projects, setProjects] = useState([]);
@@ -9,11 +11,7 @@ export default function Projects() {
   const [editingProject, setEditingProject] = useState(null);
   const [theme, setTheme] = useState(document.documentElement.getAttribute('data-theme') || 'light');
   const navigate = useNavigate();
-
-  const userStr = localStorage.getItem('user');
-  const user = userStr ? JSON.parse(userStr) : null;
-  const currentUserId = user?.id || user?._id;
-  const isAdmin = user?.role === 'admin';
+  const { user, isAdmin, currentUserId, role } = useAuth();
 
   const toggleTheme = () => {
     const next = theme === 'light' ? 'dark' : 'light';
@@ -74,31 +72,12 @@ export default function Projects() {
   return (
     <div className="app-container">
       {/* Top Brutalist Navigation */}
-      <nav className="navbar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span className="logo-small">ORBIT</span>
-          <span className="type-micro" style={{ color: '#8E8E8E' }}>// ISSUE TRACKER</span>
-        </div>
-
-        <div className="nav-actions">
-          <button onClick={toggleTheme} className="btn-logout" title="Toggle Light/Dark Theme">
-            {theme === 'light' ? <Moon size={14} /> : <Sun size={14} />}
-            <span>{theme.toUpperCase()}</span>
-          </button>
-          <div style={{ border: '1px solid #3A3A3A', padding: '6px 12px', background: '#1A1A1A', color: '#F4F4F0' }}>
-            <span className="type-micro" style={{ color: 'var(--accent-lime)' }}>{user?.username || 'ANONYMOUS'}</span>
-            <span style={{ fontSize: '10px', color: '#8E8E8E', marginLeft: '6px' }}>[{user?.role || 'USER'}]</span>
-          </div>
-          <button onClick={() => { localStorage.clear(); navigate('/login'); }} className="btn-logout">
-            <LogOut size={14}/> LOGOUT
-          </button>
-        </div>
-      </nav>
+      <Navbar theme={theme} toggleTheme={toggleTheme} />
 
       <main className="content">
         {/* 4-Column KPI Grid */}
         <div className="kpi-grid">
-          <div class="kpi-cell">
+          <div className="kpi-cell">
             <div className="kpi-top">
               <span className="type-micro">TOTAL PROJECTS</span>
               <span>↗</span>
@@ -115,7 +94,7 @@ export default function Projects() {
               <span className="type-micro">ACCESS LEVEL</span>
               <Shield size={14} />
             </div>
-            <div className="type-h2-kpi" style={{ textTransform: 'uppercase' }}>{user?.role || 'USER'}</div>
+            <div className="type-h2-kpi" style={{ textTransform: 'uppercase' }}>{role || 'USER'}</div>
             <div className="kpi-bottom">
               <span className="type-micro" style={{ color: 'var(--ink-secondary)' }}>RBAC POLICY ENFORCED</span>
               <span>✓</span>
@@ -127,7 +106,7 @@ export default function Projects() {
               <span className="type-micro">AI TRIAGE ENGINE</span>
               <span>↗</span>
             </div>
-            <div className="type-h2-kpi">GEMINI 4</div>
+            <div className="type-h2-kpi">GEMINI 2.5</div>
             <div className="kpi-bottom">
               <span className="type-micro" style={{ color: 'var(--accent-indigo)' }}>AUTO-CLASSIFICATION</span>
               <span>●</span>
@@ -156,24 +135,26 @@ export default function Projects() {
             </div>
           </div>
 
-          <form onSubmit={createProject} style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <input
-              placeholder="PROJECT NAME..."
-              value={newProject.name}
-              onChange={e => setNewProject({ ...newProject, name: e.target.value })}
-              required
-              style={{ width: '220px' }}
-            />
-            <input
-              placeholder="DESCRIPTION (OPTIONAL)..."
-              value={newProject.description}
-              onChange={e => setNewProject({ ...newProject, description: e.target.value })}
-              style={{ width: '220px' }}
-            />
-            <button type="submit" className="btn btn-primary">
-              <Plus size={16} /> NEW PROJECT →
-            </button>
-          </form>
+          {isAdmin && (
+            <form onSubmit={createProject} style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                placeholder="PROJECT NAME..."
+                value={newProject.name}
+                onChange={e => setNewProject({ ...newProject, name: e.target.value })}
+                required
+                style={{ width: '220px' }}
+              />
+              <input
+                placeholder="DESCRIPTION (OPTIONAL)..."
+                value={newProject.description}
+                onChange={e => setNewProject({ ...newProject, description: e.target.value })}
+                style={{ width: '220px' }}
+              />
+              <button type="submit" className="btn btn-primary">
+                <Plus size={16} /> NEW PROJECT →
+              </button>
+            </form>
+          )}
         </div>
 
         {/* Projects Grid */}
@@ -185,7 +166,7 @@ export default function Projects() {
             </div>
           ) : (
             projects.map(p => {
-              const isOwner = currentUserId && (p.createdBy === currentUserId || p.owner === currentUserId);
+              const isOwner = currentUserId && (String(p.createdBy?._id || p.createdBy) === String(currentUserId) || String(p.owner) === String(currentUserId));
               const canEdit = isAdmin || isOwner;
               const canDelete = isAdmin;
 

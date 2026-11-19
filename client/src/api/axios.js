@@ -15,6 +15,7 @@ const api = axios.create({
   },
 });
 
+// Request interceptor: attach bearer token
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("token");
@@ -24,6 +25,18 @@ api.interceptors.request.use(
     return config;
   },
   (error) => Promise.reject(error)
+);
+
+// Response interceptor: capture 403 Forbidden and broadcast to UI banner
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 403) {
+      const message = error.response.data?.message || "Forbidden: Access denied";
+      window.dispatchEvent(new CustomEvent("orbit:forbidden", { detail: message }));
+    }
+    return Promise.reject(error);
+  }
 );
 
 export default api;

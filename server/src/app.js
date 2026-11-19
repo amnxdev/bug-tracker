@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './utils/env.js';
 import express from 'express';
 import cors from 'cors';
 import session from 'express-session';
@@ -8,7 +8,9 @@ import authRoutes from './routes/authRoutes.js';
 import projectRoutes from './routes/projectRoutes.js';
 import bugRoutes from './routes/bugRoutes.js';
 import commentRoutes from './routes/commentRoutes.js';
+import userRoutes from './routes/userRoutes.js';
 import passport from './utils/passport.js';
+import errorHandler from './middleware/errorMiddleware.js';
 
 const app = express();
 
@@ -63,6 +65,7 @@ app.get(['/', '/api'], (req, res) => {
       auth: '/api/auth',
       projects: '/api/projects',
       bugs: '/api/projects/:id/bugs',
+      users: '/api/users',
       health: '/api/health'
     }
   });
@@ -77,10 +80,16 @@ app.use('/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/projects', projectRoutes);
 
+app.use('/api/users', userRoutes);
+app.use('/users', userRoutes);
+
 app.use('/api', bugRoutes);
 app.use('/', bugRoutes);
 
 app.use('/api', commentRoutes);
 app.use('/', commentRoutes);
+
+// Centralized error handler
+app.use(errorHandler);
 
 export default app;

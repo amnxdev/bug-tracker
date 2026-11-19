@@ -16,18 +16,24 @@ export const register = async (req, res) => {
     const existingUser = await User.findOne({ $or: [{ email }, { username }] });
     if (existingUser) return res.status(400).json({ message: "Email or username already exists" });
 
-    // ✅ FIX: Hash the password before saving
+    // Hash the password before saving
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const user = new User({ username, email, password: hashedPassword });
     await user.save();
 
-    // Auto-login after register — return a token so the page can redirect
+    // Auto-login after register — return a token and user profile with role
     const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1d' });
     res.status(201).json({
       token,
-      user: { id: user._id, username: user.username, role: user.role }
+      user: {
+        id: user._id,
+        _id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role
+      }
     });
   } catch (error) {
     console.error("Register Error:", error);
@@ -35,7 +41,7 @@ export const register = async (req, res) => {
   }
 };
 
-// Login (STRICT & CLEAN)
+// Login
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -51,12 +57,14 @@ export const login = async (req, res) => {
     // 3. Generate token
     const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
-    // 4. Send Response (Send exactly what is in the DB)
+    // 4. Send Response (includes user.role)
     res.status(200).json({ 
       token, 
       user: { 
-        id: user._id, 
-        username: user.username, 
+        id: user._id,
+        _id: user._id,
+        username: user.username,
+        email: user.email,
         role: user.role 
       } 
     });

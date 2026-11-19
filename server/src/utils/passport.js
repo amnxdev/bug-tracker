@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.js';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as GitHubStrategy } from 'passport-github2';
@@ -23,13 +23,23 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 
       if (!user) {
         const email = profile.emails?.[0]?.value;
-        user = await User.findOne({ email });
+        if (email) {
+          user = await User.findOne({ email });
+        }
+
         if (user) {
           user.googleId = profile.id;
           await user.save();
         } else {
+          const rawName = (profile.displayName || 'user').replace(/\s+/g, '_').toLowerCase();
+          let username = `${rawName}_${profile.id.slice(-4)}`;
+          const existingUsername = await User.findOne({ username });
+          if (existingUsername) {
+            username = `${username}_${Math.floor(Math.random() * 1000)}`;
+          }
+
           user = await User.create({
-            username: profile.displayName.replace(/\s+/g, '_').toLowerCase() + '_' + profile.id.slice(-4),
+            username,
             email: email || `${profile.id}@google.oauth`,
             password: 'OAUTH_NO_PASSWORD',
             googleId: profile.id,
@@ -38,6 +48,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       }
       return done(null, user);
     } catch (err) {
+      console.error('[Google Strategy Error]:', err);
       return done(err, null);
     }
   }));
@@ -58,13 +69,22 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
 
       if (!user) {
         const email = profile.emails?.[0]?.value;
-        user = await User.findOne({ email });
+        if (email) {
+          user = await User.findOne({ email });
+        }
+
         if (user) {
           user.githubId = profile.id;
           await user.save();
         } else {
+          let username = profile.username || `gh_${profile.id}`;
+          const existingUsername = await User.findOne({ username });
+          if (existingUsername) {
+            username = `${username}_${profile.id.slice(-4)}`;
+          }
+
           user = await User.create({
-            username: profile.username || `gh_${profile.id}`,
+            username,
             email: email || `${profile.id}@github.oauth`,
             password: 'OAUTH_NO_PASSWORD',
             githubId: profile.id,
@@ -73,6 +93,7 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
       }
       return done(null, user);
     } catch (err) {
+      console.error('[GitHub Strategy Error]:', err);
       return done(err, null);
     }
   }));

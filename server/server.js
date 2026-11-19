@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './src/utils/env.js';
 import dns from 'node:dns';
 import app from './src/app.js';
 import mongoose from 'mongoose';
@@ -50,7 +50,7 @@ const connectDB = async () => {
     console.log('MongoDB connected successfully');
   } catch (err) {
     console.error('Mongo Connection Error:', err.message);
-    console.error('-> Tip: In MongoDB Atlas Dashboard, make sure user "amxn" has password "SrZF_F\"2:=*Pa9J" saved.');
+    console.error('-> Tip: Please verify MONGO_URI in your environment (.env) configuration.');
   }
 };
 

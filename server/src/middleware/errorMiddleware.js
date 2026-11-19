@@ -1,5 +1,5 @@
-module.exports = (err, req, res, next) => {
-  console.error(err.stack);
+const errorHandler = (err, req, res, next) => {
+  console.error(err.stack || err.message);
 
   const status = res.statusCode === 200 ? 500 : res.statusCode;
 
@@ -7,3 +7,5 @@ module.exports = (err, req, res, next) => {
     message: err.message || "Server error",
   });
 };
+
+export default errorHandler;

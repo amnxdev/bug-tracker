@@ -1,15 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import api from '../api/axios';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, X, MessageSquare, Sparkles, AlertCircle, ChevronDown, ChevronUp, Moon, Sun, LogOut } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, X, MessageSquare, Sparkles, AlertCircle, UserCheck, CheckCircle2 } from 'lucide-react';
+import Navbar from '../components/Navbar';
+import { useAuth } from '../context/AuthContext';
 
 export default function ProjectDetails() {
   const { id } = useParams();
   const [bugs, setBugs] = useState([]);
+  const [users, setUsers] = useState([]);
   const navigate = useNavigate();
   const [newBug, setNewBug] = useState({ title: '', description: '', priority: 'medium' });
   const [editingBug, setEditingBug] = useState(null);
   const [theme, setTheme] = useState(document.documentElement.getAttribute('data-theme') || 'light');
+  const [localError, setLocalError] = useState(null);
 
   // AI & Comments state
   const [aiInsight, setAiInsight] = useState(null);
@@ -19,10 +23,7 @@ export default function ProjectDetails() {
   const [loadingAI, setLoadingAI] = useState(false);
   const [expandedAI, setExpandedAI] = useState({});
 
-  const userStr = localStorage.getItem('user');
-  const user = userStr ? JSON.parse(userStr) : null;
-  const currentUserId = user?.id || user?._id;
-  const isAdmin = user?.role === 'admin';
+  const { user, isAdmin, currentUserId } = useAuth();
 
   const toggleTheme = () => {
     const next = theme === 'light' ? 'dark' : 'light';
@@ -37,6 +38,17 @@ export default function ProjectDetails() {
       setBugs(data);
     } catch (e) {
       console.error(e);
+      setLocalError(e.response?.data?.message || "Failed to load issues");
+    }
+  };
+
+  const loadUsers = async () => {
+    if (!isAdmin) return;
+    try {
+      const { data } = await api.get('/users');
+      setUsers(data);
+    } catch (e) {
+      console.error("Could not load users list", e);
     }
   };
 
@@ -46,12 +58,14 @@ export default function ProjectDetails() {
       setComments(data);
     } catch (e) {
       console.error(e);
+      setLocalError(e.response?.data?.message || "Failed to load comments");
     }
   };
 
   useEffect(() => {
     loadBugs();
-  }, [id]);
+    loadUsers();
+  }, [id, isAdmin]);
 
   /* ── Bug Actions ── */
   const createBug = async (e) => {
@@ -59,42 +73,76 @@ export default function ProjectDetails() {
     if (!newBug.title.trim()) return;
     setLoadingAI(true);
     setAiInsight(null);
+    setLocalError(null);
     try {
       const { data } = await api.post(`/projects/${id}/bugs`, newBug);
       setNewBug({ title: '', description: '', priority: 'medium' });
       if (data.ai) setAiInsight(data.ai);
       loadBugs();
     } catch (e) {
-      alert("Failed to create issue");
+      setLocalError(e.response?.data?.message || "Failed to create issue");
     } finally {
       setLoadingAI(false);
     }
   };
 
+  // Delete bug — allowed only if user is admin or creator
   const deleteBug = async (e, bugId) => {
     e.stopPropagation();
-    if (window.confirm("Permanently delete this issue?")) {
-      try {
-        await api.delete(`/bugs/${bugId}`);
-        setBugs(c => c.filter(b => b._id !== bugId));
-      } catch (e) {
-        alert("Failed to delete issue");
-      }
+    if (!window.confirm("Permanently delete this issue? This will remove all associated comments.")) {
+      return;
+    }
+    setLocalError(null);
+    try {
+      await api.delete(`/bugs/${bugId}`);
+      setBugs(c => c.filter(b => b._id !== bugId));
+      if (editingBug?._id === bugId) setEditingBug(null);
+    } catch (e) {
+      setLocalError(e.response?.data?.message || "Failed to delete issue");
     }
   };
 
   const updateStatus = async (e, bugId, newStatus) => {
     e.stopPropagation();
+    setLocalError(null);
     try {
       await api.put(`/bugs/${bugId}`, { status: newStatus });
       loadBugs();
     } catch (e) {
-      alert("Failed to update status");
+      setLocalError(e.response?.data?.message || "Failed to update status");
+    }
+  };
+
+  const closeBug = async (e, bugId) => {
+    e.stopPropagation();
+    setLocalError(null);
+    try {
+      await api.put(`/bugs/${bugId}`, { status: 'closed' });
+      loadBugs();
+    } catch (e) {
+      setLocalError(e.response?.data?.message || "Failed to close issue");
+    }
+  };
+
+  const handleAssignBug = async (e, bugId, currentAssignee) => {
+    e.stopPropagation();
+    const promptValue = window.prompt(
+      "Assign developer to issue:\nEnter username, email, or user ID (leave blank to unassign):",
+      currentAssignee?.username || currentAssignee?.email || ""
+    );
+    if (promptValue === null) return; // Cancelled
+    setLocalError(null);
+    try {
+      await api.put(`/bugs/${bugId}/assign`, { assignedTo: promptValue.trim() });
+      loadBugs();
+    } catch (err) {
+      setLocalError(err.response?.data?.message || "Failed to assign issue");
     }
   };
 
   const saveEdit = async (e) => {
     e.preventDefault();
+    setLocalError(null);
     try {
       await api.put(`/bugs/${editingBug._id}`, {
         title: editingBug.title,
@@ -102,10 +150,17 @@ export default function ProjectDetails() {
         priority: editingBug.priority,
         status: editingBug.status
       });
+
+      if (isAdmin && editingBug.assignedToInput !== undefined) {
+        await api.put(`/bugs/${editingBug._id}/assign`, {
+          assignedTo: editingBug.assignedToInput.trim()
+        });
+      }
+
       setEditingBug(null);
       loadBugs();
     } catch (err) {
-      alert("Failed to save issue edits");
+      setLocalError(err.response?.data?.message || "Failed to save issue edits");
     }
   };
 
@@ -116,12 +171,13 @@ export default function ProjectDetails() {
   /* ── On-demand AI Re-triage ── */
   const retriage = async (e, bugId) => {
     e.stopPropagation();
+    setLocalError(null);
     try {
-      const { data } = await api.post(`/bugs/${bugId}/retriage`);
+      await api.post(`/bugs/${bugId}/retriage`);
       loadBugs();
       setExpandedAI(prev => ({ ...prev, [bugId]: true }));
     } catch (e) {
-      alert("AI retriage failed");
+      setLocalError(e.response?.data?.message || "AI retriage failed");
     }
   };
 
@@ -140,22 +196,24 @@ export default function ProjectDetails() {
   const submitComment = async (e) => {
     e.preventDefault();
     if (!newComment.trim()) return;
+    setLocalError(null);
     try {
       await api.post(`/bugs/${commentsBugId}/comments`, { text: newComment });
       setNewComment('');
       loadComments(commentsBugId);
     } catch (e) {
-      alert("Failed to post comment");
+      setLocalError(e.response?.data?.message || "Failed to post comment");
     }
   };
 
   const deleteComment = async (commentId) => {
     if (!window.confirm("Delete comment?")) return;
+    setLocalError(null);
     try {
       await api.delete(`/bugs/${commentsBugId}/comments/${commentId}`);
       loadComments(commentsBugId);
     } catch (e) {
-      alert("Failed to delete comment");
+      setLocalError(e.response?.data?.message || "Failed to delete comment");
     }
   };
 
@@ -167,25 +225,38 @@ export default function ProjectDetails() {
   return (
     <div className="app-container">
       {/* Top Navbar */}
-      <nav className="navbar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span className="logo-small" onClick={() => navigate('/projects')} style={{ cursor: 'pointer' }}>ORBIT</span>
-          <span className="type-micro" style={{ color: '#8E8E8E' }}>// ISSUE MANAGEMENT</span>
-        </div>
+      <Navbar subtitle="// ISSUE MANAGEMENT" theme={theme} toggleTheme={toggleTheme} />
 
-        <div className="nav-actions">
-          <button onClick={toggleTheme} className="btn-logout" title="Toggle Light/Dark Theme">
-            {theme === 'light' ? <Moon size={14} /> : <Sun size={14} />}
-            <span>{theme.toUpperCase()}</span>
-          </button>
-          <div style={{ border: '1px solid #3A3A3A', padding: '6px 12px', background: '#1A1A1A', color: '#F4F4F0' }}>
-            <span className="type-micro" style={{ color: 'var(--accent-lime)' }}>{user?.username || 'ANONYMOUS'}</span>
+      {/* Local Error Banner */}
+      {localError && (
+        <div
+          role="alert"
+          style={{
+            background: 'var(--status-danger)',
+            color: '#FFFFFF',
+            padding: '10px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '12px',
+            fontWeight: '700',
+            letterSpacing: '0.04em',
+            borderBottom: '2px solid #991B1B'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertCircle size={16} />
+            <span>ERROR: {localError}</span>
           </div>
-          <button onClick={() => { localStorage.clear(); navigate('/login'); }} className="btn-logout">
-            <LogOut size={14}/> LOGOUT
+          <button
+            type="button"
+            onClick={() => setLocalError(null)}
+            style={{ background: 'transparent', border: 'none', color: '#FFFFFF', cursor: 'pointer', padding: 0 }}
+          >
+            <X size={14} />
           </button>
         </div>
-      </nav>
+      )}
 
       <main className="content">
         {/* Metric Summary Bar */}
@@ -221,103 +292,88 @@ export default function ProjectDetails() {
             </div>
             <div className="type-h2-kpi" style={{ color: 'var(--accent-indigo)' }}>{inProgressCount}</div>
             <div className="kpi-bottom">
-              <span className="type-micro" style={{ color: 'var(--ink-secondary)' }}>CURRENTLY ACTIVE</span>
+              <span className="type-micro" style={{ color: 'var(--ink-secondary)' }}>ACTIVE DEVELOPMENT</span>
               <span>●</span>
             </div>
           </div>
 
           <div className="kpi-cell">
             <div className="kpi-top">
-              <span className="type-micro">CRITICAL (HIGH)</span>
+              <span className="type-micro">HIGH SEVERITY</span>
               <span>↗</span>
             </div>
             <div className="type-h2-kpi" style={{ color: 'var(--status-danger)' }}>{highPriorityCount}</div>
             <div className="kpi-bottom">
-              <span className="type-micro" style={{ color: 'var(--status-success)' }}>{resolvedCount} RESOLVED</span>
-              <span>✓</span>
+              <span className="type-micro" style={{ color: 'var(--status-danger)' }}>IMMEDIATE ATTENTION</span>
+              <span>●</span>
             </div>
           </div>
         </div>
 
-        {/* Section Header */}
-        <div className="header-row">
-          <div>
-            <button
-              onClick={() => navigate('/projects')}
-              className="btn btn-outline"
-              style={{ padding: '5px 10px', marginBottom: '8px', border: '1px solid var(--border-primary)' }}
-            >
-              <ArrowLeft size={14} /> ALL PROJECTS
-            </button>
-            <h1 className="type-hero" style={{ fontSize: '36px' }}>ISSUE TRACKER</h1>
+        {/* Action Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+          <button onClick={() => navigate('/projects')} className="btn btn-outline" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+            <ArrowLeft size={14} /> BACK TO REPOSITORIES
+          </button>
+          <div className="type-micro" style={{ color: 'var(--ink-secondary)' }}>
+            REPOSITORIES // {id}
           </div>
+        </div>
 
-          {/* Create Issue Bar */}
-          <form onSubmit={createBug} style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+        {/* Issue Ingestion Bar */}
+        <div className="search-bar" style={{ marginBottom: '24px' }}>
+          <form onSubmit={createBug} style={{ display: 'flex', gap: '8px', width: '100%', flexWrap: 'wrap' }}>
             <input
-              placeholder="ISSUE TITLE..."
+              placeholder="ISSUE TITLE / VULNERABILITY..."
               value={newBug.title}
               onChange={e => setNewBug({ ...newBug, title: e.target.value })}
               required
-              style={{ width: '220px' }}
+              style={{ flex: 2, minWidth: '220px' }}
             />
             <input
-              placeholder="DETAILS (OPTIONAL)..."
+              placeholder="INCIDENT DETAILS / REPRODUCTION..."
               value={newBug.description}
               onChange={e => setNewBug({ ...newBug, description: e.target.value })}
-              style={{ width: '200px' }}
+              style={{ flex: 3, minWidth: '260px' }}
             />
             <select
               value={newBug.priority}
               onChange={e => setNewBug({ ...newBug, priority: e.target.value })}
-              style={{ width: '120px' }}
+              style={{ width: '130px', flexShrink: 0 }}
             >
-              <option value="low">LOW</option>
-              <option value="medium">MEDIUM</option>
-              <option value="high">HIGH</option>
+              <option value="low">LOW PRIORITY</option>
+              <option value="medium">MEDIUM PRIORITY</option>
+              <option value="high">HIGH PRIORITY</option>
             </select>
             <button
               type="submit"
-              className="btn btn-primary"
               disabled={loadingAI}
-              style={{ display: 'flex', gap: '6px' }}
+              className="btn btn-primary"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}
             >
-              <Sparkles size={14} />
-              {loadingAI ? 'TRIAGING...' : 'SUBMIT ISSUE →'}
+              {loadingAI ? (
+                <>AI TRIAGING...</>
+              ) : (
+                <>
+                  <Sparkles size={14} /> LOG ISSUE →
+                </>
+              )}
             </button>
           </form>
         </div>
 
-        {/* AI Insight Banner (Post-Creation) */}
+        {/* AI Insight Live Feedback Banner */}
         {aiInsight && (
-          <div style={{ background: 'var(--bg-surface)', border: '2px solid var(--border-primary)', padding: '16px 20px', marginBottom: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-primary)', paddingBottom: '10px' }}>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <span className="badge badge-lime">GEMINI 4 AI TRIAGE</span>
-                <span className="type-micro">AUTOMATED ASSESSMENT COMPLETE</span>
-              </div>
-              <button onClick={() => setAiInsight(null)} className="btn btn-outline" style={{ padding: '4px 8px' }}>
-                <X size={14} />
-              </button>
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--accent-lime)', padding: '16px 20px', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+              <span className="badge badge-lime">GEMINI AI TRIAGE REPORT</span>
+              <span className="type-micro" style={{ color: 'var(--ink-primary)' }}>AUTO-CLASSIFIED PRIORITY: {aiInsight.suggestedPriority?.toUpperCase()}</span>
             </div>
-
-            <div style={{ marginTop: '12px', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
-              {aiInsight.suggestedPriority && (
-                <span className="badge badge-dark">
-                  RECOMMENDED PRIORITY: <strong>{aiInsight.suggestedPriority.toUpperCase()}</strong>
-                </span>
-              )}
-              {aiInsight.tags?.map(tag => (
-                <span key={tag} className="badge badge-indigo">#{tag.toUpperCase()}</span>
-              ))}
-            </div>
-
             {aiInsight.reasoning && (
-              <p style={{ margin: '10px 0 0 0', fontSize: '13px', color: 'var(--ink-primary)' }}>
-                <strong>Rationale:</strong> {aiInsight.reasoning}
+              <p style={{ margin: '0 0 6px 0', fontSize: '13px', color: 'var(--ink-secondary)' }}>
+                <strong>Reasoning:</strong> {aiInsight.reasoning}
               </p>
             )}
-
             {aiInsight.enhancedDescription && (
               <p style={{ margin: '6px 0 0 0', fontSize: '12px', color: 'var(--ink-secondary)', fontStyle: 'italic' }}>
                 <strong>Refined description:</strong> "{aiInsight.enhancedDescription}"
@@ -351,12 +407,18 @@ export default function ProjectDetails() {
             </div>
           ) : (
             bugs.map(b => {
-              const isOwner = currentUserId && (b.createdBy === currentUserId || b.owner === currentUserId || b.owner?._id === currentUserId);
-              const isAssigned = b.assignedTo && (b.assignedTo._id === currentUserId || b.assignedTo === currentUserId);
+              const creatorId = String(b.createdBy?._id || b.createdBy || b.owner?._id || b.owner || '');
+              const isOwner = currentUserId && creatorId === String(currentUserId);
+              const assignedId = String(b.assignedTo?._id || b.assignedTo || '');
+              const isAssigned = currentUserId && assignedId === String(currentUserId);
+
+              // RBAC Permission Invariants
               const canEdit = isAdmin || isOwner || isAssigned;
-              const canDelete = isAdmin;
+              const canDeleteOrClose = isAdmin || isOwner;
               const hasAI = b.aiSuggestedPriority || b.aiTags?.length > 0;
               const aiExpanded = expandedAI[b._id];
+
+              const assigneeName = b.assignedTo?.username || b.assignedTo?.email || (typeof b.assignedTo === 'string' && b.assignedTo.trim() ? b.assignedTo : null);
 
               return (
                 <div key={b._id} style={{ display: 'flex', flexDirection: 'column' }}>
@@ -383,11 +445,25 @@ export default function ProjectDetails() {
                         {b.description || "No description provided."}
                       </p>
 
-                      {b.assignedTo && (
-                        <div className="type-micro" style={{ marginTop: '6px', color: 'var(--accent-indigo)' }}>
-                          ASSIGNED: {b.assignedTo.username || b.assignedTo}
-                        </div>
-                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
+                        <span className="type-micro" style={{ color: assigneeName ? 'var(--accent-indigo)' : 'var(--ink-muted)' }}>
+                          ASSIGNED: {assigneeName || 'Unassigned'}
+                        </span>
+
+                        {/* Assign trigger — rendered ONLY for admins */}
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleAssignBug(e, b._id, b.assignedTo)}
+                            className="btn btn-outline"
+                            style={{ padding: '2px 8px', fontSize: '10px' }}
+                            title="Assign or reassign developer (Admin only)"
+                          >
+                            <UserCheck size={11} style={{ marginRight: '4px' }} />
+                            {assigneeName ? 'REASSIGN' : 'ASSIGN'}
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -412,11 +488,27 @@ export default function ProjectDetails() {
                         <option value="open">OPEN</option>
                         <option value="in-progress">IN PROGRESS</option>
                         <option value="resolved">RESOLVED</option>
-                        <option value="closed">CLOSED</option>
+                        {/* Status 'closed' rendered ONLY if user is admin or creator */}
+                        {canDeleteOrClose && <option value="closed">CLOSED</option>}
                       </select>
+
+                      {/* Quick "Close" Button — rendered ONLY if user is admin or creator */}
+                      {canDeleteOrClose && b.status !== 'closed' && (
+                        <button
+                          type="button"
+                          onClick={(e) => closeBug(e, b._id)}
+                          className="btn btn-outline"
+                          style={{ padding: '7px 10px', color: 'var(--status-success)' }}
+                          title="Close issue (Admin or Creator only)"
+                        >
+                          <CheckCircle2 size={14} style={{ marginRight: '4px' }} />
+                          CLOSE
+                        </button>
+                      )}
 
                       {/* Comments Drawer Button */}
                       <button
+                        type="button"
                         onClick={(e) => openComments(e, b._id)}
                         className="btn btn-outline"
                         style={{ padding: '7px 10px', background: commentsBugId === b._id ? 'var(--accent-lime)' : 'transparent', color: commentsBugId === b._id ? '#0F0F0F' : 'inherit' }}
@@ -428,6 +520,7 @@ export default function ProjectDetails() {
                       {/* AI Expand Button */}
                       {hasAI && (
                         <button
+                          type="button"
                           onClick={(e) => { e.stopPropagation(); setExpandedAI(prev => ({ ...prev, [b._id]: !prev[b._id] })); }}
                           className="btn btn-outline"
                           style={{ padding: '7px 10px' }}
@@ -439,6 +532,7 @@ export default function ProjectDetails() {
 
                       {/* Re-triage button */}
                       <button
+                        type="button"
                         onClick={(e) => retriage(e, b._id)}
                         className="btn btn-outline"
                         style={{ padding: '7px 10px' }}
@@ -447,13 +541,14 @@ export default function ProjectDetails() {
                         ↺
                       </button>
 
-                      {/* Delete */}
-                      {canDelete && (
+                      {/* Delete Button — rendered ONLY if user is admin or creator */}
+                      {canDeleteOrClose && (
                         <button
+                          type="button"
                           onClick={(e) => deleteBug(e, b._id)}
                           className="btn btn-outline"
                           style={{ padding: '7px 10px', color: 'var(--status-danger)' }}
-                          title="Delete issue"
+                          title="Delete issue (Admin or Creator only)"
                         >
                           <Trash2 size={14} />
                         </button>
@@ -502,8 +597,9 @@ export default function ProjectDetails() {
                                 <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>{c.text}</p>
                               </div>
 
-                              {(isAdmin || c.createdBy?._id === currentUserId) && (
+                              {(isAdmin || String(c.createdBy?._id || c.createdBy) === String(currentUserId)) && (
                                 <button
+                                  type="button"
                                   onClick={() => deleteComment(c._id)}
                                   className="btn btn-outline"
                                   style={{ padding: '2px 6px', color: 'var(--status-danger)', border: 'none' }}
@@ -533,86 +629,141 @@ export default function ProjectDetails() {
         </div>
       </main>
 
-      {/* Edit Issue Modal */}
-      {editingBug && (
-        <div className="modal-backdrop" onClick={() => setEditingBug(null)}>
-          <div className="modal-dialog" onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-primary)', paddingBottom: '12px' }}>
-              <h2 className="type-h1" style={{ fontSize: '24px' }}>EDIT ISSUE SPEC</h2>
-              <button type="button" onClick={() => setEditingBug(null)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                <X size={20} />
-              </button>
-            </div>
+      {/* Edit / Bug Detail Modal */}
+      {editingBug && (() => {
+        const modalCreatorId = String(editingBug.createdBy?._id || editingBug.createdBy || editingBug.owner?._id || editingBug.owner || '');
+        const modalCanDeleteOrClose = isAdmin || (currentUserId && modalCreatorId === String(currentUserId));
+        const modalAssigneeName = editingBug.assignedTo?.username || editingBug.assignedTo?.email || (typeof editingBug.assignedTo === 'string' && editingBug.assignedTo.trim() ? editingBug.assignedTo : null);
 
-            {/* AI suggestion shortcuts in modal */}
-            {editingBug.aiSuggestedPriority && (
-              <div style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-primary)', padding: '12px', marginBottom: '16px' }}>
-                <div className="type-micro" style={{ marginBottom: '6px' }}>AI RECOMMENDATION</div>
-                <button
-                  type="button"
-                  onClick={() => applyAIPriority(editingBug.aiSuggestedPriority)}
-                  className="btn btn-lime"
-                  style={{ padding: '5px 10px', fontSize: '10px' }}
-                >
-                  APPLY AI PRIORITY: {editingBug.aiSuggestedPriority.toUpperCase()} ↗
+        return (
+          <div className="modal-backdrop" onClick={() => setEditingBug(null)}>
+            <div className="modal-dialog" onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-primary)', paddingBottom: '12px' }}>
+                <h2 className="type-h1" style={{ fontSize: '24px' }}>BUG DETAIL &amp; EDIT SPEC</h2>
+                <button type="button" onClick={() => setEditingBug(null)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                  <X size={20} />
                 </button>
               </div>
-            )}
 
-            <form onSubmit={saveEdit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label>ISSUE TITLE</label>
-                <input
-                  value={editingBug.title}
-                  onChange={e => setEditingBug({ ...editingBug, title: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div>
-                <label>DESCRIPTION</label>
-                <textarea
-                  value={editingBug.description || ''}
-                  onChange={e => setEditingBug({ ...editingBug, description: e.target.value })}
-                  rows={4}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label>PRIORITY</label>
-                  <select
-                    value={editingBug.priority}
-                    onChange={e => setEditingBug({ ...editingBug, priority: e.target.value })}
+              {/* AI suggestion shortcuts in modal */}
+              {editingBug.aiSuggestedPriority && (
+                <div style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-primary)', padding: '12px', marginBottom: '16px' }}>
+                  <div className="type-micro" style={{ marginBottom: '6px' }}>AI RECOMMENDATION</div>
+                  <button
+                    type="button"
+                    onClick={() => applyAIPriority(editingBug.aiSuggestedPriority)}
+                    className="btn btn-lime"
+                    style={{ padding: '5px 10px', fontSize: '10px' }}
                   >
-                    <option value="low">LOW</option>
-                    <option value="medium">MEDIUM</option>
-                    <option value="high">HIGH</option>
-                  </select>
+                    APPLY AI PRIORITY: {editingBug.aiSuggestedPriority.toUpperCase()} ↗
+                  </button>
+                </div>
+              )}
+
+              <form onSubmit={saveEdit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div>
+                  <label>ISSUE TITLE</label>
+                  <input
+                    value={editingBug.title}
+                    onChange={e => setEditingBug({ ...editingBug, title: e.target.value })}
+                    required
+                  />
                 </div>
 
                 <div>
-                  <label>LIFECYCLE STATUS</label>
-                  <select
-                    value={editingBug.status}
-                    onChange={e => setEditingBug({ ...editingBug, status: e.target.value })}
-                  >
-                    <option value="open">OPEN</option>
-                    <option value="in-progress">IN PROGRESS</option>
-                    <option value="resolved">RESOLVED</option>
-                    <option value="closed">CLOSED</option>
-                  </select>
+                  <label>DESCRIPTION</label>
+                  <textarea
+                    value={editingBug.description || ''}
+                    onChange={e => setEditingBug({ ...editingBug, description: e.target.value })}
+                    rows={4}
+                  />
                 </div>
-              </div>
 
-              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>SAVE CHANGES →</button>
-                <button type="button" className="btn btn-outline" onClick={() => setEditingBug(null)}>CANCEL</button>
-              </div>
-            </form>
+                {/* Bug Detail: Assign dropdown rendered ONLY for admins; for others show assignee name as plain text ("Unassigned" if none) */}
+                <div>
+                  <label>ASSIGNED DEVELOPER</label>
+                  {isAdmin ? (
+                    <select
+                      value={editingBug.assignedToInput !== undefined ? editingBug.assignedToInput : (editingBug.assignedTo?._id || (typeof editingBug.assignedTo === 'string' ? editingBug.assignedTo : ''))}
+                      onChange={e => setEditingBug({ ...editingBug, assignedToInput: e.target.value })}
+                    >
+                      <option value="">-- UNASSIGNED --</option>
+                      {users.map(u => (
+                        <option key={u._id} value={u._id}>
+                          {u.username} ({u.email}) [{u.role.toUpperCase()}]
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div
+                      style={{
+                        padding: '11px 14px',
+                        border: '1px solid var(--border-primary)',
+                        background: 'var(--bg-subtle)',
+                        color: 'var(--ink-primary)',
+                        fontSize: '13px',
+                        fontWeight: '500',
+                      }}
+                    >
+                      {modalAssigneeName || 'Unassigned'}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label>PRIORITY</label>
+                    <select
+                      value={editingBug.priority}
+                      onChange={e => setEditingBug({ ...editingBug, priority: e.target.value })}
+                    >
+                      <option value="low">LOW</option>
+                      <option value="medium">MEDIUM</option>
+                      <option value="high">HIGH</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label>LIFECYCLE STATUS</label>
+                    <select
+                      value={editingBug.status}
+                      onChange={e => setEditingBug({ ...editingBug, status: e.target.value })}
+                    >
+                      <option value="open">OPEN</option>
+                      <option value="in-progress">IN PROGRESS</option>
+                      <option value="resolved">RESOLVED</option>
+                      {/* Close status rendered ONLY for admin or creator */}
+                      {modalCanDeleteOrClose && <option value="closed">CLOSED</option>}
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', marginTop: '10px', flexWrap: 'wrap' }}>
+                  <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
+                    SAVE CHANGES →
+                  </button>
+
+                  {/* Delete button in modal — rendered ONLY for admin or creator */}
+                  {modalCanDeleteOrClose && (
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      style={{ color: 'var(--status-danger)' }}
+                      onClick={(e) => deleteBug(e, editingBug._id)}
+                    >
+                      DELETE ISSUE
+                    </button>
+                  )}
+
+                  <button type="button" className="btn btn-outline" onClick={() => setEditingBug(null)}>
+                    CANCEL
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

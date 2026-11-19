@@ -3,11 +3,11 @@ import { GoogleGenAI } from '@google/genai';
 
 // Initialize Gemini client
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 /**
  * AI Triage: Suggests priority, generates tags, and enhances description
- * This addresses the paper's core gap: lack of AI-assisted bug triage
- * in modern bug tracking systems.
+ * Addresses the paper gap: AI-assisted bug triage in modern tracking systems.
  */
 export const triageBug = async (title, description) => {
   try {
@@ -21,15 +21,17 @@ Analyze this bug report and return a JSON object with:
 Bug Title: ${title}
 Bug Description: ${description || '(no description provided)'}
 
-Respond ONLY with valid JSON, no markdown, no extra text.`;
+Respond ONLY with valid JSON.`;
 
-    const interaction = await ai.interactions.create({
-      model: 'gemini-4-hydrogen',
-      input: prompt,
-      store: false,
+    const response = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+      },
     });
 
-    const rawText = interaction.output_text?.trim() || '';
+    const rawText = response.text?.trim() || '{}';
     // Strip any accidental markdown code fences
     const jsonText = rawText.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim();
     const result = JSON.parse(jsonText);
@@ -55,7 +57,6 @@ Respond ONLY with valid JSON, no markdown, no extra text.`;
 /**
  * AI Duplicate Detection: Checks if a new bug is likely a duplicate
  * of existing open bugs in the same project.
- * Paper gap: manual duplicate detection is a known pain point.
  */
 export const detectDuplicates = async (newTitle, newDescription, existingBugs) => {
   if (!existingBugs || existingBugs.length === 0) return [];
@@ -80,13 +81,15 @@ Return a JSON array of objects for bugs that are likely duplicates (similarity >
 If no duplicates found, return an empty array [].
 Respond ONLY with valid JSON.`;
 
-    const interaction = await ai.interactions.create({
-      model: 'gemini-4-hydrogen',
-      input: prompt,
-      store: false,
+    const response = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+      },
     });
 
-    const rawText = interaction.output_text?.trim() || '[]';
+    const rawText = response.text?.trim() || '[]';
     const jsonText = rawText.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim();
     const result = JSON.parse(jsonText);
     return Array.isArray(result) ? result : [];
