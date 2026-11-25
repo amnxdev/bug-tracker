@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '../api/axios';
 import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 const rawUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 // Strip trailing /api to prevent double /api/api/auth
@@ -9,18 +10,30 @@ const BACKEND_URL = rawUrl.replace(/\/api\/?$/, '').replace(/\/+$/, '');
 export default function Register() {
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });
   const [loading, setLoading] = useState(false);
+  const [slowWake, setSlowWake] = useState(false);
+  const [error, setError] = useState(null);
   const navigate = useNavigate();
+  const { login } = useAuth();
+
+  useEffect(() => {
+    if (!loading) {
+      setSlowWake(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlowWake(true), 5000);
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
     try {
       const { data } = await api.post('/auth/register', formData);
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      login(data.user, data.token);
       navigate('/projects');
     } catch (err) {
-      alert(err.response?.data?.message || 'Registration failed. Email might already be taken.');
+      setError(err.response?.data?.message || 'Something went wrong');
     } finally {
       setLoading(false);
     }
@@ -36,6 +49,12 @@ export default function Register() {
           </div>
         </div>
 
+        {error && (
+          <div role="alert" style={{ background: 'var(--status-danger)', color: '#FFFFFF', border: '1px solid #991B1B', padding: '10px 12px', fontSize: '12px', fontWeight: '700' }}>
+            {error}
+          </div>
+        )}
+
         {/* OAuth on Register */}
         <div style={{ display: 'flex', gap: '8px' }}>
           <a
@@ -44,13 +63,6 @@ export default function Register() {
             style={{ flex: 1, justifyContent: 'center', padding: '10px 8px', fontSize: '10px' }}
           >
             GOOGLE ↗
-          </a>
-          <a
-            href={`${BACKEND_URL}/api/auth/github`}
-            className="btn btn-dark"
-            style={{ flex: 1, justifyContent: 'center', padding: '10px 8px', fontSize: '10px' }}
-          >
-            GITHUB ↗
           </a>
         </div>
 
@@ -88,6 +100,17 @@ export default function Register() {
             required
           />
         </div>
+
+        {loading && (
+          <div className="type-mono" style={{ textAlign: 'center', color: 'var(--ink-secondary)' }}>
+            LOADING...
+            {slowWake && (
+              <div style={{ marginTop: '4px', color: 'var(--status-warning)' }}>
+                Server is waking up, this can take up to 50 seconds
+              </div>
+            )}
+          </div>
+        )}
 
         <button type="submit" className="btn btn-primary" disabled={loading} style={{ width: '100%', marginTop: '6px' }}>
           {loading ? 'CREATING ACCOUNT...' : 'REGISTER & LAUNCH →'}

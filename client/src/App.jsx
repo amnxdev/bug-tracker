@@ -5,7 +5,7 @@ import Register from './pages/Register';
 import Projects from './pages/Projects';
 import ProjectDetails from './pages/ProjectDetails';
 import OAuthCallback from './pages/OAuthCallback';
-import Admin from './pages/Admin';
+import AdminUsers from './pages/AdminUsers';
 import ErrorBanner from './components/ErrorBanner';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
@@ -63,7 +63,7 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <AdminRoute>
-                <Admin />
+                <AdminUsers />
               </AdminRoute>
             </ProtectedRoute>
           }

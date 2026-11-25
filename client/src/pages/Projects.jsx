@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../api/axios';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Pencil, Trash2, X, ArrowRight, Shield } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, ArrowRight, Shield, AlertCircle } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
 
@@ -10,8 +10,21 @@ export default function Projects() {
   const [newProject, setNewProject] = useState({ name: '', description: '' });
   const [editingProject, setEditingProject] = useState(null);
   const [theme, setTheme] = useState(document.documentElement.getAttribute('data-theme') || 'light');
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [slowWake, setSlowWake] = useState(false);
+  const [error, setError] = useState(null);
   const navigate = useNavigate();
-  const { user, isAdmin, currentUserId, role } = useAuth();
+  const { isAdmin, currentUserId, role } = useAuth();
+
+  useEffect(() => {
+    if (!loading && !submitting) {
+      setSlowWake(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlowWake(true), 5000);
+    return () => clearTimeout(timer);
+  }, [loading, submitting]);
 
   const toggleTheme = () => {
     const next = theme === 'light' ? 'dark' : 'light';
@@ -20,48 +33,64 @@ export default function Projects() {
   };
 
   const loadProjects = async () => {
+    setLoading(true);
+    setError(null);
     try {
       const { data } = await api.get('/projects');
       setProjects(data);
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Something went wrong');
+    } finally {
+      setLoading(false);
     }
   };
 
   const createProject = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
+    setError(null);
     try {
       await api.post('/projects', newProject);
       setNewProject({ name: '', description: '' });
-      loadProjects();
-    } catch (e) {
-      alert('Error creating project');
+      await loadProjects();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Something went wrong');
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const deleteProject = async (e, projectId) => {
     e.stopPropagation();
     if (window.confirm("Delete project? This will permanently remove all associated issues.")) {
+      setSubmitting(true);
+      setError(null);
       try {
         await api.delete(`/projects/${projectId}`);
         setProjects(c => c.filter(p => p._id !== projectId));
-      } catch (e) {
-        alert("Failed to delete project");
+      } catch (err) {
+        setError(err.response?.data?.message || 'Something went wrong');
+      } finally {
+        setSubmitting(false);
       }
     }
   };
 
   const saveEdit = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
+    setError(null);
     try {
       await api.put(`/projects/${editingProject._id}`, {
         name: editingProject.name,
         description: editingProject.description
       });
       setEditingProject(null);
-      loadProjects();
-    } catch (e) {
-      alert("Failed to update project");
+      await loadProjects();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Something went wrong');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -72,7 +101,37 @@ export default function Projects() {
   return (
     <div className="app-container">
       {/* Top Brutalist Navigation */}
-      <Navbar theme={theme} toggleTheme={toggleTheme} />
+      <Navbar subtitle="// GEMINI 2.5 FLASH // ISSUE TRACKER" theme={theme} toggleTheme={toggleTheme} />
+
+      {error && (
+        <div
+          role="alert"
+          style={{
+            background: 'var(--status-danger)',
+            color: '#FFFFFF',
+            padding: '10px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '12px',
+            fontWeight: '700',
+            letterSpacing: '0.04em',
+            borderBottom: '2px solid #991B1B'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertCircle size={16} />
+            <span>ERROR: {error}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            style={{ background: 'transparent', border: 'none', color: '#FFFFFF', cursor: 'pointer', padding: 0 }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       <main className="content">
         {/* 4-Column KPI Grid */}
@@ -106,7 +165,7 @@ export default function Projects() {
               <span className="type-micro">AI TRIAGE ENGINE</span>
               <span>↗</span>
             </div>
-            <div className="type-h2-kpi">GEMINI 2.5</div>
+            <div className="type-h2-kpi" style={{ fontSize: '24px' }}>GEMINI 2.5 FLASH</div>
             <div className="kpi-bottom">
               <span className="type-micro" style={{ color: 'var(--accent-indigo)' }}>AUTO-CLASSIFICATION</span>
               <span>●</span>
@@ -150,19 +209,30 @@ export default function Projects() {
                 onChange={e => setNewProject({ ...newProject, description: e.target.value })}
                 style={{ width: '220px' }}
               />
-              <button type="submit" className="btn btn-primary">
-                <Plus size={16} /> NEW PROJECT →
+              <button type="submit" className="btn btn-primary" disabled={submitting}>
+                <Plus size={16} /> {submitting ? 'CREATING...' : 'NEW PROJECT →'}
               </button>
             </form>
           )}
         </div>
 
+        {(loading || submitting) && (
+          <div className="type-mono" style={{ padding: '12px 0', color: 'var(--ink-secondary)' }}>
+            LOADING...
+            {slowWake && (
+              <span style={{ marginLeft: '10px', color: 'var(--status-warning)' }}>
+                Server is waking up, this can take up to 50 seconds
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Projects Grid */}
         <div className="grid">
-          {projects.length === 0 ? (
+          {loading ? null : projects.length === 0 ? (
             <div style={{ gridColumn: '1 / -1', padding: '40px', textAlign: 'center', background: 'var(--bg-surface)', border: '1px solid var(--border-primary)' }}>
-              <div className="type-h3">NO PROJECTS INITIALIZED</div>
-              <p style={{ color: 'var(--ink-secondary)', margin: '8px 0 0' }}>Create your first project above to begin tracking issues with AI triage.</p>
+              <div className="type-h3">No projects yet. Create your first one.</div>
+              <p style={{ color: 'var(--ink-secondary)', margin: '8px 0 0' }}>Use the form above to initialize your first repository.</p>
             </div>
           ) : (
             projects.map(p => {
@@ -197,6 +267,7 @@ export default function Projects() {
                             className="btn btn-outline"
                             style={{ padding: '4px 8px', color: 'var(--status-danger)' }}
                             title="Delete project"
+                            disabled={submitting}
                           >
                             <Trash2 size={13} />
                           </button>
@@ -256,7 +327,9 @@ export default function Projects() {
               </div>
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>SAVE CHANGES →</button>
+                <button type="submit" className="btn btn-primary" disabled={submitting} style={{ flex: 1 }}>
+                  {submitting ? 'SAVING...' : 'SAVE CHANGES →'}
+                </button>
                 <button type="button" className="btn btn-outline" onClick={() => setEditingProject(null)}>CANCEL</button>
               </div>
             </form>

@@ -21,9 +21,26 @@ export default function ProjectDetails() {
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [loadingAI, setLoadingAI] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [slowWake, setSlowWake] = useState(false);
   const [expandedAI, setExpandedAI] = useState({});
 
+  // Client-side filter state
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+
   const { user, isAdmin, currentUserId } = useAuth();
+
+  useEffect(() => {
+    if (!loading && !loadingAI && !submitting) {
+      setSlowWake(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlowWake(true), 5000);
+    return () => clearTimeout(timer);
+  }, [loading, loadingAI, submitting]);
 
   const toggleTheme = () => {
     const next = theme === 'light' ? 'dark' : 'light';
@@ -33,12 +50,16 @@ export default function ProjectDetails() {
 
   /* ── Data Loaders ── */
   const loadBugs = async () => {
+    setLoading(true);
+    setLocalError(null);
     try {
       const { data } = await api.get(`/projects/${id}/bugs`);
       setBugs(data);
     } catch (e) {
       console.error(e);
-      setLocalError(e.response?.data?.message || "Failed to load issues");
+      setLocalError(e.response?.data?.message || "Something went wrong");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -142,6 +163,7 @@ export default function ProjectDetails() {
 
   const saveEdit = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
     setLocalError(null);
     try {
       await api.put(`/bugs/${editingBug._id}`, {
@@ -158,9 +180,11 @@ export default function ProjectDetails() {
       }
 
       setEditingBug(null);
-      loadBugs();
+      await loadBugs();
     } catch (err) {
-      setLocalError(err.response?.data?.message || "Failed to save issue edits");
+      setLocalError(err.response?.data?.message || "Something went wrong");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -196,13 +220,16 @@ export default function ProjectDetails() {
   const submitComment = async (e) => {
     e.preventDefault();
     if (!newComment.trim()) return;
+    setSubmitting(true);
     setLocalError(null);
     try {
       await api.post(`/bugs/${commentsBugId}/comments`, { text: newComment });
       setNewComment('');
-      loadComments(commentsBugId);
+      await loadComments(commentsBugId);
     } catch (e) {
-      setLocalError(e.response?.data?.message || "Failed to post comment");
+      setLocalError(e.response?.data?.message || "Something went wrong");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -222,10 +249,18 @@ export default function ProjectDetails() {
   const resolvedCount = bugs.filter(b => b.status === 'resolved' || b.status === 'closed').length;
   const highPriorityCount = bugs.filter(b => b.priority === 'high').length;
 
+  const filteredBugs = bugs.filter((b) => {
+    const bugStatus = b.status || 'open';
+    const matchesStatus = statusFilter === 'all' || bugStatus === statusFilter;
+    const matchesPriority = priorityFilter === 'all' || b.priority === priorityFilter;
+    const matchesSearch = !searchQuery.trim() || (b.title || '').toLowerCase().includes(searchQuery.trim().toLowerCase());
+    return matchesStatus && matchesPriority && matchesSearch;
+  });
+
   return (
     <div className="app-container">
       {/* Top Navbar */}
-      <Navbar subtitle="// ISSUE MANAGEMENT" theme={theme} toggleTheme={toggleTheme} />
+      <Navbar subtitle="// GEMINI 2.5 FLASH // ISSUE MANAGEMENT" theme={theme} toggleTheme={toggleTheme} />
 
       {/* Local Error Banner */}
       {localError && (
@@ -398,15 +433,65 @@ export default function ProjectDetails() {
           </div>
         )}
 
+        {/* Client-side Filter Bar */}
+        <div className="search-bar" style={{ marginBottom: '16px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <input
+            type="text"
+            placeholder="SEARCH ISSUES BY TITLE..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ flex: 2, minWidth: '220px' }}
+          />
+          <select
+            aria-label="Filter by status"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            style={{ width: '160px', flexShrink: 0 }}
+          >
+            <option value="all">STATUS: ALL</option>
+            <option value="open">OPEN</option>
+            <option value="in-progress">IN PROGRESS</option>
+            <option value="resolved">RESOLVED</option>
+            <option value="closed">CLOSED</option>
+          </select>
+          <select
+            aria-label="Filter by priority"
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value)}
+            style={{ width: '160px', flexShrink: 0 }}
+          >
+            <option value="all">PRIORITY: ALL</option>
+            <option value="low">LOW</option>
+            <option value="medium">MEDIUM</option>
+            <option value="high">HIGH</option>
+          </select>
+        </div>
+
+        {/* Loading & Slow Wake Indicator */}
+        {(loading || loadingAI || submitting) && (
+          <div className="type-mono" style={{ padding: '10px 0', color: 'var(--ink-secondary)' }}>
+            LOADING...
+            {slowWake && (
+              <span style={{ marginLeft: '10px', color: 'var(--status-warning)' }}>
+                Server is waking up, this can take up to 50 seconds
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Issue Stack */}
         <div className="bug-stack">
-          {bugs.length === 0 ? (
+          {loading ? null : bugs.length === 0 ? (
             <div style={{ padding: '48px 24px', textAlign: 'center', background: 'var(--bg-surface)', border: '1px solid var(--border-primary)' }}>
-              <div className="type-h3">NO ISSUES LOGGED IN THIS REPOSITORY</div>
+              <div className="type-h3">No bugs yet. Log your first issue.</div>
               <p style={{ color: 'var(--ink-secondary)', margin: '8px 0 0' }}>Log an issue using the bar above to run Gemini AI triage and deduplication.</p>
             </div>
+          ) : filteredBugs.length === 0 ? (
+            <div style={{ padding: '48px 24px', textAlign: 'center', background: 'var(--bg-surface)', border: '1px solid var(--border-primary)' }}>
+              <div className="type-h3">No bugs match these filters</div>
+            </div>
           ) : (
-            bugs.map(b => {
+            filteredBugs.map(b => {
               const creatorId = String(b.createdBy?._id || b.createdBy || b.owner?._id || b.owner || '');
               const isOwner = currentUserId && creatorId === String(currentUserId);
               const assignedId = String(b.assignedTo?._id || b.assignedTo || '');
@@ -618,7 +703,9 @@ export default function ProjectDetails() {
                           value={newComment}
                           onChange={e => setNewComment(e.target.value)}
                         />
-                        <button type="submit" className="btn btn-dark" style={{ flexShrink: 0 }}>POST →</button>
+                        <button type="submit" className="btn btn-dark" disabled={submitting} style={{ flexShrink: 0 }}>
+                          {submitting ? 'POSTING...' : 'POST →'}
+                        </button>
                       </form>
                     </div>
                   )}
@@ -739,8 +826,8 @@ export default function ProjectDetails() {
                 </div>
 
                 <div style={{ display: 'flex', gap: '10px', marginTop: '10px', flexWrap: 'wrap' }}>
-                  <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-                    SAVE CHANGES →
+                  <button type="submit" className="btn btn-primary" disabled={submitting} style={{ flex: 1 }}>
+                    {submitting ? 'SAVING...' : 'SAVE CHANGES →'}
                   </button>
 
                   {/* Delete button in modal — rendered ONLY for admin or creator */}

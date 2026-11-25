@@ -34,7 +34,7 @@ export default function Navbar({ subtitle = "// ISSUE TRACKER", theme, toggleThe
             title="Admin Role Management"
           >
             <Shield size={14} color="var(--accent-lime)" />
-            <span>ADMIN PANEL</span>
+            <span>Admin</span>
           </Link>
         )}
 

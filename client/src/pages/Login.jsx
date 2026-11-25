@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '../api/axios';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 const rawUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 // Strip trailing /api to prevent double /api/api/auth/google
@@ -9,20 +10,32 @@ const BACKEND_URL = rawUrl.replace(/\/api\/?$/, '').replace(/\/+$/, '');
 const Login = () => {
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
+  const [slowWake, setSlowWake] = useState(false);
+  const [error, setError] = useState(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const oauthError = searchParams.get('error');
+  const { login } = useAuth();
+
+  useEffect(() => {
+    if (!loading) {
+      setSlowWake(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlowWake(true), 5000);
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
     try {
       const res = await api.post('/auth/login', formData);
-      localStorage.setItem('token', res.data.token);
-      localStorage.setItem('user', JSON.stringify(res.data.user));
+      login(res.data.user, res.data.token);
       navigate('/projects');
     } catch (err) {
-      alert(err.response?.data?.message || 'Login failed');
+      setError(err.response?.data?.message || 'Something went wrong');
     } finally {
       setLoading(false);
     }
@@ -42,15 +55,19 @@ const Login = () => {
           <div style={{ background: '#0F0F0F', color: '#F4F4F0', border: '1px solid var(--status-warning)', padding: '12px 14px', fontSize: '12px' }}>
             {oauthError === 'google_not_configured' ? (
               <span>⚠️ Google OAuth is not configured in <code>server/.env</code>. Please use email &amp; password below.</span>
-            ) : oauthError === 'github_not_configured' ? (
-              <span>⚠️ GitHub OAuth is not configured in <code>server/.env</code>. Please use email &amp; password below.</span>
             ) : (
               <span>OAuth sign-in failed. Please use email &amp; password.</span>
             )}
           </div>
         )}
 
-        {/* OAuth Buttons */}
+        {error && (
+          <div role="alert" style={{ background: 'var(--status-danger)', color: '#FFFFFF', border: '1px solid #991B1B', padding: '10px 12px', fontSize: '12px', fontWeight: '700' }}>
+            {error}
+          </div>
+        )}
+
+        {/* OAuth Button */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <a
             href={`${BACKEND_URL}/api/auth/google`}
@@ -64,17 +81,6 @@ const Login = () => {
               <path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.5-5.8c-2 1.4-4.6 2.3-7.7 2.3-6.2 0-11.5-4.2-13.3-9.9l-8.3 6C6.7 42.6 14.7 48 24 48z"/>
             </svg>
             CONTINUE WITH GOOGLE ↗
-          </a>
-
-          <a
-            href={`${BACKEND_URL}/api/auth/github`}
-            className="btn btn-dark"
-            style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
-          >
-            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.38.6.11.82-.26.82-.58v-2.17c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.33-1.76-1.33-1.76-1.09-.74.08-.73.08-.73 1.2.09 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49 1 .11-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 3-.4c1.02 0 2.04.14 3 .4 2.28-1.55 3.29-1.23 3.29-1.23.66 1.66.25 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.81 5.63-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58C20.56 21.8 24 17.3 24 12c0-6.63-5.37-12-12-12z"/>
-            </svg>
-            CONTINUE WITH GITHUB ↗
           </a>
         </div>
 
@@ -104,6 +110,17 @@ const Login = () => {
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
             />
           </div>
+
+          {loading && (
+            <div className="type-mono" style={{ textAlign: 'center', color: 'var(--ink-secondary)' }}>
+              LOADING...
+              {slowWake && (
+                <div style={{ marginTop: '4px', color: 'var(--status-warning)' }}>
+                  Server is waking up, this can take up to 50 seconds
+                </div>
+              )}
+            </div>
+          )}
 
           <button type="submit" className="btn btn-primary" disabled={loading} style={{ width: '100%', marginTop: '6px' }}>
             {loading ? 'AUTHENTICATING...' : 'SIGN IN →'}

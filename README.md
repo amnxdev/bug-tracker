@@ -1,269 +1,131 @@
-# 🐞 Bug Tracking System | MERN + RBAC
+# ORBIT — Issue & Bug Tracker
 
-A backend-focused bug tracking system built with the MERN stack.
-
-The project is intentionally scoped to demonstrate **authentication**, **role-based access control**, **ownership enforcement**, and **clean API design**, rather than UI complexity or SaaS-style features.
+ORBIT is a full-stack, Neo-Brutalist issue and bug tracking platform built on the MERN stack (MongoDB, Express, React 19, Node.js ES modules) with Role-Based Access Control (RBAC) and automated AI triage. When a bug is logged, ORBIT runs Google Gemini (`gemini-2.5-flash`) in parallel to suggest severity priority, refine descriptions, generate tags, and detect potential duplicate issues, while enforcing strict ownership and role-based permissions across projects, bugs, comments, and user administration.
 
 ---
 
-## 🔗 Live Demo
+## Live Demo
 
-**Frontend:** [https://orbit-fontend.vercel.app](https://orbit-fontend.vercel.app)
-**Backend API:** [https://orbit-backend-i2rz.onrender.com](https://orbit-backend-i2rz.onrender.com)
+- **Frontend (Vercel):** https://orbit-fontend.vercel.app
+- **Backend API (Render):** https://orbit-backend-i2rz.onrender.com
 
-> The live deployment mirrors the local setup. All authentication, authorization, and ownership checks are enforced at the API level.
-
----
-
-## 🧭 Project Scope
-
-The system models how teams track bugs across projects with strict access rules.
-
-Users work inside projects, report bugs, update progress through a defined status flow, and discuss issues via comments. Data access is controlled entirely by role and ownership checks on the backend.
+> **Note:** The backend runs on Render's free tier and may take up to ~50 seconds to wake up on the first request after inactivity.
 
 ---
 
-## 👥 Roles & Permissions
+## Screenshots
 
-### User
-
-* Register and login
-* View projects
-* Create bugs inside projects
-* Comment on bugs
-* Update bug status **only if assigned**
-
-### Admin
-
-* All user permissions
-* Create projects
-* Assign bugs to users
+- `[screenshot-1]` — Project Directory & KPI Dashboard (Dark / Light Neo-Brutalist Theme)
+- `[screenshot-2]` — Issue List, Client-Side Filters & Gemini AI Triage / Duplicate Detection
+- `[screenshot-3]` — Admin User & Role Management (`/admin`)
 
 ---
 
-## 🔐 Authorization Rules
+## Features
 
-All rules are enforced server-side:
-
-* JWT required for all protected routes
-* Only admins can create projects
-* Only admins can assign bugs
-* Only the bug creator or assigned user can update a bug
-* Users cannot read or modify resources they do not own
-
-No permission logic is trusted to the frontend.
-
----
-
-## 🧩 Core Features
-
-### Authentication
-
-* User registration and login
-* JWT-based authentication
-* Central auth middleware
-
-### Projects
-
-* Project creation (admin only)
-* View all projects (authenticated users)
-
-### Bugs
-
-* Create bugs inside projects
-* Status lifecycle:
-  **Open → In Progress → Resolved → Closed**
-* Priority levels:
-  **Low / Medium / High**
-* Assign bugs to users (admin only)
-* Filter bugs by status and priority
-
-### AI-Powered Features (Gemini API — Paper Gap Implementation)
-
-Based on the research paper *"Past, Present, and Future of Bug Tracking in the Generative AI Era"* (arXiv 2510.08005v2), which identifies the **lack of AI-assisted triage** as the primary gap in modern bug tracking systems, the following AI features have been implemented:
-
-* **Automatic Bug Triage** — On every bug creation, the Gemini API (`gemini-4-hydrogen`) analyzes the title and description to suggest a priority level (low / medium / high), generate semantic category tags (e.g., `#ui`, `#auth`, `#crash`), and produce an enhanced, structured description.
-* **Duplicate Detection** — When creating a bug, AI checks all open bugs in the same project for semantic similarity and surfaces potential duplicates with similarity scores and explanations.
-* **On-Demand Re-triage** — Any bug can be re-analyzed at any time via the ↺ button on the bug row.
-* **AI Insights Panel** — Each bug card can expand to display the AI-generated priority suggestion, tags, and enhanced description inline.
-* **Graceful Degradation** — All AI features fail safely; if the Gemini API is unavailable or the key is missing, bug creation proceeds normally without blocking.
-
-### Comments
-
-* Add threaded comments to any bug
-* Only the comment author or an admin can delete a comment
-
-
+- **Authentication & Sessions:** Email/password registration and login (`bcryptjs` + `jsonwebtoken` 1-day JWT) plus Google OAuth 2.0 (`passport-google-oauth20`), with persistent `localStorage` + React Context session state.
+- **Role-Based Access Control (RBAC):**
+  - Backend `verifyToken`, `requireRole(...roles)`, and `canModifyBug(user, bug)` enforcement.
+  - Frontend role badges (`ADMIN` / `USER`), protected `/admin` route, role-scoped UI controls, and a global HTTP 403 Forbidden error banner.
+- **Project Management:** View all projects, and (for admins) create, edit, and delete projects.
+- **Bug Lifecycle & Assignment:** Create bugs, edit details, track 4-tier status (`open`, `in-progress`, `resolved`, `closed`) and priority (`low`, `medium`, `high`), assign developers (admin-only), and cascade-delete bugs with their comments.
+- **Gemini AI Triage & Duplicate Detection:** Automatically classifies priority, refines descriptions, extracts tags, and flags near-duplicate bugs on creation, with on-demand re-triage (`POST /api/bugs/:id/retriage`).
+- **Threaded Discussions:** Post and delete comments on individual bugs.
+- **Client-Side Filtering:** Filter bugs instantaneously by Status, Priority, and Title search query.
+- **Admin User Management (`/admin`):** View all users (without password hashes) and promote/demote roles (`PUT /api/users/:id/role`) with self-demotion prevention.
+- **Resilient UX States:** Mono `LOADING...` indicators with a 5-second cold-start wake notice, empty states, inline error banners, and disabled submit buttons during in-flight requests.
 
 ---
 
-## 🧠 Data Models
+## Tech Stack
 
-### User
-
-* name
-* email
-* password (hashed)
-* role (`user | admin`)
-
-### Project
-
-* name
-* description
-* createdBy
-
-### Bug
-
-* title
-* description
-* status (`open | in-progress | resolved | closed`)
-* priority (`low | medium | high`)
-* projectId
-* createdBy
-* assignedTo
-* aiSuggestedPriority (AI-generated)
-* aiEnhancedDescription (AI-generated)
-* aiTags (AI-generated)
-
-### Comment
-
-* bugId
-* text
-* userId
+| Layer | Technology |
+| :--- | :--- |
+| **Frontend** | React 19, Vite, React Router, Axios, Lucide React |
+| **Styling** | Custom Neo-Brutalist CSS (`0px` radius, `1px` borders, no shadows, CSS variables) |
+| **Backend** | Node.js (ES Modules), Express 5 |
+| **Database** | MongoDB Atlas, Mongoose |
+| **Auth & Security** | JSON Web Tokens (`jsonwebtoken`), `bcryptjs`, Passport (`passport-google-oauth20`) |
+| **AI Engine** | Google Gemini API (`@google/genai`, `gemini-2.5-flash`) |
 
 ---
 
-## 🌐 API Routes
+## Roles & Permissions
 
-### Auth
-
-* `POST /api/auth/register`
-* `POST /api/auth/login`
-* `GET /api/auth/google` (OAuth 2.0 redirect)
-* `GET /api/auth/google/callback`
-* `GET /api/auth/github` (OAuth 2.0 redirect)
-* `GET /api/auth/github/callback`
-
-### Projects
-
-* `POST /api/projects` (admin only)
-* `GET /api/projects`
-
-### Bugs
-
-* `POST /api/projects/:projectId/bugs` — Create bug (triggers AI triage + duplicate check)
-* `GET /api/projects/:projectId/bugs`
-* `PUT /api/bugs/:bugId`
-* `PUT /api/bugs/:bugId/assign` (admin only)
-* `POST /api/bugs/:bugId/retriage` — Re-run AI triage on demand
-* `DELETE /api/bugs/:bugId`
-
-### Comments
-
-* `POST /api/bugs/:bugId/comments`
-* `GET /api/bugs/:bugId/comments`
-* `DELETE /api/bugs/:bugId/comments/:commentId`
+| Action / Route | `user` | `admin` |
+| :--- | :---: | :---: |
+| Register / Login / View Projects | Yes | Yes |
+| Create / Edit / Delete Projects | No | Yes |
+| Create Bugs & Post Comments | Yes | Yes |
+| Update Bug Details / Status | Creator or Assignee only | Any bug |
+| Set Bug Status to `closed` | Creator only | Any bug |
+| Delete Bug (and its Comments) | Creator only | Any bug |
+| Assign / Reassign Developer (`PUT /api/bugs/:id/assign`) | No (`403 Forbidden`) | Yes |
+| View User Directory (`GET /api/users`) | Yes (no passwords) | Yes (no passwords) |
+| Access `/admin` & Change User Roles (`PUT /api/users/:id/role`) | No (redirected to `/`) | Yes (cannot self-demote) |
 
 ---
 
-## 🔁 Authentication & Request Flow
+## Local Setup
 
-1. User registers or logs in
-2. Server issues a JWT
-3. JWT sent via `Authorization: Bearer <token>`
-4. Auth middleware validates token
-5. Role and ownership checks are applied
-6. Request is allowed or rejected
-
----
-
-## 🛠 Tech Stack
-
-* **Frontend:** React (Vite)
-* **Backend:** Node.js, Express
-* **Database:** MongoDB (Mongoose)
-* **Authentication:** JSON Web Tokens (JWT)
-
----
-
-## 📁 Folder Structure
-
-```
-bug-tracker-mern/
-├── server/
-│   ├── src/
-│   │   ├── models/
-│   │   ├── controllers/
-│   │   ├── routes/
-│   │   ├── middleware/
-│   │   └── app.js
-│   ├── server.js
-│   ├── .env.example
-│   └── package.json
-├── client/
-│   ├── src/
-│   │   ├── pages/
-│   │   ├── components/
-│   │   └── App.jsx
-│   └── package.json
-└── README.md
+### 1. Clone the repository
+```bash
+git clone https://github.com/amnxdev/bug-tracker.git
+cd bug-tracker
 ```
 
----
+### 2. Configure Environment Variables
 
-## ▶️ Local Setup
+Create `server/.env` with the following variable names (no values included here):
 
-### Backend
+- `PORT`
+- `MONGO_URI`
+- `JWT_SECRET`
+- `CLIENT_URL`
+- `SERVER_URL`
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
 
-```
+Create `client/.env` with:
+
+- `VITE_API_URL`
+
+### 3. Install Dependencies & Seed Database
+
+```bash
+# Backend
 cd server
 npm install
+npm run seed
 npm run dev
 ```
 
-Create `.env` using `.env.example`:
-
-```
-PORT=5000
-MONGO_URI=your_mongodb_uri
-JWT_SECRET=your_secret
-```
-
-### Frontend
-
-```
+```bash
+# Frontend (in a new terminal)
 cd client
 npm install
 npm run dev
 ```
 
+Open `http://localhost:5173` in your browser.
+
 ---
 
-## 🧪 Postman Collection
+## Demo Credentials
 
-A Postman collection is included to test the backend end-to-end.
+Running `npm run seed` in `server/` resets the database and creates `"Demo App"` with 8 sample bugs, 3 comments, and the following accounts:
 
-Covers:
+| Role | Email | Password |
+| :--- | :--- | :--- |
+| **Admin** | `admin@orbit.dev` | `Demo@1234` |
+| **User** | `user@orbit.dev` | `Demo@1234` |
 
-* User registration and login
-* JWT handling
-* Project creation and listing
-* Bug creation and assignment
-* Bug status updates
-* Comment creation and fetching
-* Bug deletion
+---
 
-### Collection Flow
+## Known Limitations
 
-* `login` stores JWT as a collection variable (`token`)
-* `create project` stores `projectId`
-* `create bug` stores `bugId`
-* Subsequent requests reuse variables automatically
-
-Authorization header used:
-
-```
-Authorization: Bearer {{token}}
-```
-
-RBAC and ownership rules can be verified by logging in as different users.
+- **Free-Tier Cold Starts:** When hosted on Render's free tier, the backend spins down after inactivity, causing initial API requests to take up to ~50 seconds.
+- **Client-Side Pagination & Filtering:** `GET /api/projects/:projectId/bugs` fetches all bugs for a project and filters them in browser memory, which may slow down for repositories with thousands of issues.
+- **AI Triage Availability:** Automated triage and duplicate detection require a valid `GEMINI_API_KEY` with available quota; if unavailable, ORBIT falls back to default medium priority without AI tags.
