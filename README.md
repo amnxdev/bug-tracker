@@ -15,9 +15,14 @@ ORBIT is a full-stack, Neo-Brutalist issue and bug tracking platform built on th
 
 ## Screenshots
 
-- `[screenshot-1]` — Project Directory & KPI Dashboard (Dark / Light Neo-Brutalist Theme)
-- `[screenshot-2]` — Issue List, Client-Side Filters & Gemini AI Triage / Duplicate Detection
-- `[screenshot-3]` — Admin User & Role Management (`/admin`)
+### 1. Project Directory & KPI Dashboard (Dark Theme)
+![Project Directory & KPI Dashboard](docs/screenshots/dashboard.png)
+
+### 2. Issue List, Client-Side Filters & AI Triage
+![Issue List, Client-Side Filters & AI Triage](docs/screenshots/issues.png)
+
+### 3. Admin User & Role Management (`/admin`)
+![Admin User & Role Management](docs/screenshots/admin.png)
 
 ---
 
