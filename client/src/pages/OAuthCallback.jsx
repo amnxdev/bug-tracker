@@ -1,8 +1,10 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 export default function OAuthCallback() {
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   useEffect(() => {
     const hash = window.location.hash.slice(1);
@@ -13,16 +15,15 @@ export default function OAuthCallback() {
     if (token && userRaw) {
       try {
         const user = JSON.parse(decodeURIComponent(userRaw));
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(user));
-        navigate('/projects');
+        login(user, token);
+        navigate('/projects', { replace: true });
       } catch {
-        navigate('/login?error=oauth_parse_failed');
+        navigate('/login?error=oauth_parse_failed', { replace: true });
       }
     } else {
-      navigate('/login?error=oauth_failed');
+      navigate('/login?error=oauth_failed', { replace: true });
     }
-  }, []);
+  }, [login, navigate]);
 
   return (
     <div className="auth-container">
